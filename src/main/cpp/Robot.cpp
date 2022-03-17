@@ -10,8 +10,12 @@
 #include <frc/XboxController.h>
 #include <frc/smartdashboard/SmartDashboard.h>
 #include <frc/livewindow/LiveWindow.h>
-#define AUTO_MODE 0
+#include <cameraserver/CameraServer.h>
+#include <frc/DigitalInput.h>
+
+#define AUTO_MODE 1
 #define FORWARD_DRIVE_TIME 2.0 //seconds 
+//#define SPEED 2.0 //divide by 2 max speed 
 
 #define LEFT_FORWARD_SLOW 0.5		//Speed variables for auto
 #define RIGHT_FORWARD_SLOW 0.5
@@ -30,9 +34,9 @@ class Robot : public frc::TimedRobot {
     RightFrontController.SetInverted(true);
     RightRearController.SetInverted(true);
     SelectedAutonomous = 0;
-
-    
+    OurServer.StartAutomaticCapture();  
   }
+
 
   void AutonomousInit() override {
   LeftFrontController.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput, 0);
@@ -68,9 +72,14 @@ void AutonomousPeriodic()
     double X,Y,Z;
   double powLF,powLB,powRF,powRB;
   double D1RightTrigger = 0; // Right trigger means pick up ball 
+  double D1LeftTrigger = 0; // Right trigger means pick up ball 
   bool D1LeftBumper = false;   // Right bumper means eject ball
   bool D2RightBumper = false;   // Right bumper means raise arms 
   bool D2LeftBumper = false;   // Left bumper means lower arms
+  bool UpperRightinput = false;  
+  bool UpperLeftinput = false;
+  bool LowerRightinput = false;
+  bool LowerLeftinput = false;//digital input for lift limit switches ^
   /*
 
   setup Robot Drive
@@ -98,10 +107,10 @@ void AutonomousPeriodic()
   SmartDashboard::PutNumber("Y", Y);
   SmartDashboard::PutNumber("Z", Z);
 
-  powLF = Y + X + Z ;
-  powLB = Y - X + Z ;
-  powRF = Y - X - Z ;
-  powRB = Y + X - Z ;
+  powLF = -Y + X + Z ;
+  powLB = -Y - X + Z ;
+  powRF = -Y - X - Z ;
+  powRB = -Y + X - Z ;
 
   if((abs(powLF)>1) || 
      (abs(powLB)>1) ||
@@ -118,12 +127,17 @@ void AutonomousPeriodic()
       max = abs(powRF);
     if (abs(powRB)> max)
       max = abs(powRB);
-    powLF /= max;
-    powLB /= max;
-    powRF /= max;
-    powRB /= max;
+    powLF /= max ;
+    powLB /= max ;
+    powRF /= max ;
+    powRB /= max ;
   }
-
+  /*
+    powLF /= SPEED;
+    powLB /= SPEED; 
+    powRF /= SPEED;
+    powRB /= SPEED;
+    */
   SmartDashboard::PutNumber("Left Front", powLF);
   SmartDashboard::PutNumber("Left Rear", powLB);
   SmartDashboard::PutNumber("Right Front", powRF);
@@ -138,7 +152,18 @@ void AutonomousPeriodic()
   setup The Ball Pick-up
   */
   D1RightTrigger = Robot::Driver1.GetRightTriggerAxis();
-  BallPickUp.Set (ctre::phoenix::motorcontrol::ControlMode::PercentOutput,D1RightTrigger);
+  D1LeftTrigger = Robot::Driver1.GetLeftTriggerAxis();
+if (D1RightTrigger == 0)
+{
+  BallPickUp.Set (ctre::phoenix::motorcontrol::ControlMode::PercentOutput,-D1LeftTrigger);
+
+}
+else 
+{
+ BallPickUp.Set (ctre::phoenix::motorcontrol::ControlMode::PercentOutput,D1RightTrigger);  
+}
+ 
+
   D1LeftBumper = Robot::Driver1.GetLeftBumper();
   D2RightBumper = Robot::Driver2.GetRightBumper();
   D2LeftBumper = Robot::Driver2.GetLeftBumper();
@@ -150,21 +175,29 @@ void AutonomousPeriodic()
   {
     EjectBall.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0);
   }
+  
+
+  UpperRightinput = UpperRight.Get();
+  UpperLeftinput = UpperLeft.Get();
+  LowerRightinput = LowerRight.Get();
+  LowerLeftinput = LowerLeft.Get();
+
   if  (D2RightBumper) 
   {
 // Raise the arm 
-    RaiseArm1.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0.5);
-    RaiseArm2.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0.5);
+    
+    if (UpperLeftinput) RaiseArmL.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0.5);
+    if (UpperRightinput) RaiseArmR.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0.5);
   }
   else if (D2LeftBumper)
   {
-    RaiseArm1.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,-0.5);
-    RaiseArm2.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,-0.5);
+    if (LowerLeftinput) RaiseArmL.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,-0.5);
+    if(LowerRightinput) RaiseArmR.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,-0.5);
   }
   else 
   {
-    RaiseArm1.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0);
-    RaiseArm2.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0);
+    RaiseArmL.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0);
+    RaiseArmR.Set(ctre::phoenix::motorcontrol::ControlMode::PercentOutput,0);
   }
   }
   
@@ -225,7 +258,7 @@ void LowHub(void)
 		units::second_t CurrentTime;
   	units::second_t MotorSpin = (units::second_t)2.0;
   	units::second_t ShootTime = (units::second_t)4.0;
-  	units::second_t DriveTime = (units::second_t)9.0;
+  	units::second_t DriveTime = (units::second_t)7.0; 
 
 		switch(CurrentState)
 		{
@@ -324,11 +357,11 @@ void LowHub(void)
   VictorSPX RightRearController{kRearRightChannel};
   TalonSRX BallPickUp{kBallPickUpChannel};
   TalonSRX EjectBall{kBallEjectChannel};
-  TalonSRX RaiseArm1{kRaiseArm1Channel};
-  TalonSRX RaiseArm2{kRaiseArm2Channel};
+  TalonSRX RaiseArmL{kRaiseArm1Channel};
+  TalonSRX RaiseArmR{kRaiseArm2Channel};
   /*
-  frc::MecanumDrive m_robotDrive{RightFrontControllerontLeft, m_rearLeft, RightFrontControllerontRight,
-                                 m_rearRight};
+  frc::MecanumDrive m_robotDrive{RightFrontControllerontLeft, m_rearLeft, Ri                                                                                                                                                                                   ghtFrontControllerontRight,
+                                 m_rearRight}
 */
 
   frc::XboxController Driver1{0};
@@ -336,8 +369,13 @@ void LowHub(void)
  // frc::Joystick m_stick{kJoystickChannel};
   int SelectedAutonomous;
   int CurrentState;
-  frc::LiveWindow* lw = LiveWindow::GetInstance();		//Opens control dashboard 
+  //frc::LiveWindow* lw = LiveWindow::GetInstance();		//Opens control dashboard 
   frc::Timer OurTimer; 
+  frc::CameraServer OurServer{};
+  frc::DigitalInput UpperRight{1};
+  frc::DigitalInput UpperLeft{2};
+  frc::DigitalInput LowerRight{3};
+  frc::DigitalInput LowerLeft{4};
 };
 
 #ifndef RUNNING_FRC_TESTS
